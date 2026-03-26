@@ -1,47 +1,30 @@
 ###############################################################################
-# This script ingests a list of disks from a csv file and updates 
-# the data access auth mode to "azureactivedirectory" for each disk.
+# This script pulls a list of all disks for each subscription 
+# and updates the disk accessauthmode to azureactivedirectory.
 #
-# Created by: Andrew Hughes
-# Last updated: 03-26-2026
+# created_by: andrew hughes
+# last_modified: 03-26-2026
+# dependencies: azure powershell module (az.compute, az.accounts)
 ###############################################################################
 
-### requires az module: install-module -name az -scope currentuser ###
+#!! requires az module: install-module -name az -scope currentuser !!#
 
-start-transcript -path "c:\windows\temp\disk_disk_set_auth.log"
-import-module az.compute
-
-### UPDATE THE INPUT FILE PATH BELOW TO POINT TO YOUR CSV FILE ###
-### input csv format: subscription_id, resource_group, disk_name ###
-$input_file = "c:\users\andrew\downloads\disks.csv"
-
+start-transcript -path "c:\windows\temp\set_disk_authmode.log"
+import-module az.compute, az.accounts
 connect-azaccount
 
-if(test-path -path $input_file) {
-    write-host "loading disk list from: $input_file"
-} else {
-    write-host "input file not found: $input_file"
-    exit 1
-}
+$subscription_list = get-azsubscription
 
-try {
-    $disks = import-csv -path $input_file
-} catch {
-    write-host "error loading csv file: $input_file"
-    exit 1
-}
+foreach ($subscription in $subscription_list) {
+    write-output "processing subscription: $($subscription.name)"
+    set-azcontext -subscriptionid $subscription.id
 
-$subscription = $disks[0].subscription_id
+    $disks = get-azdisk
 
-foreach ($disk in $disks) {
-
-    if($disk.subscription_id -ne $subscription) {
-        $subscription = $disk.subscription_id
-        set-azcontext -subscriptionid $subscription
+    foreach ($disk in $disks) {
+        new-azdiskupdateconfig -dataaccessauthmode "azureactivedirectory" `
+        | update-azdisk -resourcegroupname "$($disk.resourcegroupname)" -diskname "$($disk.name)"
     }
-
-new-azdiskupdateconfig -dataaccessauthmode "azureactivedirectory" | `
-    update-azdisk -resourcegroupname "$($disk.resource_group)" -diskname "$($disk.disk_name)"
 }
 
 stop-transcript
